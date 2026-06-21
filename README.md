@@ -1,64 +1,70 @@
-# 王道進行 Visual Piano Transcription
+# 王道進行 Piano Video Transcription
 
-Visual piano transcription using computer vision — detects which keys are pressed by analyzing color highlights in piano tutorial videos frame-by-frame. Outputs MIDI files.
+Transcribe piano from [this 王道進行 tutorial video](https://www.youtube.com/watch?v=Fdx9fQv0qQU) to MIDI and sheet music.
 
-Built for videos like [this 王道進行 (Royal Road chord progression) tutorial](https://www.youtube.com/watch?v=Fdx9fQv0qQU) where keys light up when pressed.
+**Output files in this repo:**
+- [`output.mid`](output.mid) — MIDI transcription
+- [`sheet.pdf`](sheet.pdf) — Sheet music (14 pages)
+- [`playback.mp3`](playback.mp3) — Audio render of the MIDI
 
-## How It Works
+## Three Approaches
 
-1. **Detect keyboard region** — finds the piano keyboard in the bottom portion of each video frame
-2. **Map key boundaries** — identifies all 88 keys by detecting the black key pattern (groups of 2 and 3)
-3. **Frame-by-frame color detection**:
-   - **White keys**: HSV saturation thresholding (pressed keys show a pink/salmon tint vs pure white)
-   - **Black keys**: Red channel dominance detection (R > 80, R > G×1.5, R > B×1.5)
-4. **Track note events** — detects onset (key goes from unpressed → pressed) and offset (pressed → released)
-5. **Generate MIDI** — maps pixel positions to MIDI note numbers and writes a standard MIDI file
+| Folder | How it works | When to use |
+|--------|-------------|-------------|
+| [`visual/`](visual/) | OpenCV color detection on video frames | Headless, no GPU, videos with lit-up keys |
+| [`audio/`](audio/) | ByteDance neural net on audio track | Better rhythm accuracy, needs PyTorch |
+| [`gui-local/`](gui-local/) | Interactive [video2midi](https://github.com/svsdval/video2midi) | Fine-tuning on a machine with a display |
 
-## Two Approaches
-
-### [`headless/`](headless/) — Scriptable CV Pipeline (No GUI)
-
-Runs anywhere including cloud/SSH. Pure Python with OpenCV.
+## Visual Transcription (headless)
 
 ```bash
-cd headless
+cd visual
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Download video
 pip install yt-dlp
-yt-dlp -f "bestvideo[height<=720]+bestaudio/best[height<=720]" --merge-output-format mp4 -o video.mp4 "https://www.youtube.com/watch?v=Fdx9fQv0qQU"
-
-# If video is AV1 encoded (OpenCV may not decode it), re-encode to H.264:
+yt-dlp -f "bestvideo[height<=720]+bestaudio/best[height<=720]" \
+  --merge-output-format mp4 -o video.mp4 "https://www.youtube.com/watch?v=Fdx9fQv0qQU"
 ffmpeg -i video.mp4 -c:v libx264 -crf 18 -c:a copy video_h264.mp4
 
-# Transcribe
-python3 src/transcribe.py video_h264.mp4 -o output.mid --json output.json --fps 30 --kb-top 0.78
+python3 transcribe.py video_h264.mp4 -o output.mid --fps 30 --kb-top 0.78
 ```
 
-**Options:**
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-o` | `output.mid` | Output MIDI file path |
-| `--json` | — | Also save note events as JSON |
-| `--fps` | 30 | Sampling rate (higher = more accurate timing, slower) |
-| `--kb-top` | 0.75 | Where the keyboard starts (0 = top, 1 = bottom of frame) |
-| `--kb-bottom` | 1.0 | Where the keyboard ends |
-| `--velocity` | 80 | MIDI note velocity |
+Detects pressed keys by color:
+- **White keys** — HSV saturation > 25 (pink tint vs pure white)
+- **Black keys** — Red channel dominance (R > 80, R > 1.5× G and B)
 
-### [`gui-local/`](gui-local/) — Interactive GUI (Local Machine)
+## Audio Transcription (better rhythm)
 
-Uses [video2midi](https://github.com/svsdval/video2midi) for interactive keyboard alignment and color picking. Requires a display. See [gui-local/README.md](gui-local/README.md) for setup instructions.
+```bash
+cd audio
+python3 -m venv .venv && source .venv/bin/activate
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements.txt
+
+python3 transcribe.py <video_or_wav> -o output.mid
+```
+
+Uses [piano_transcription_inference](https://github.com/qiuqiangkong/piano_transcription_inference) (CRNN, F1=0.9677, trained on MAESTRO).
+
+## Sheet Music from MIDI
+
+```bash
+sudo apt install lilypond   # or: brew install lilypond
+midi2ly output.mid -o sheet.ly
+lilypond --pdf -o sheet sheet.ly
+```
+
+## Audio Render from MIDI
+
+```bash
+sudo apt install fluidsynth fluid-soundfont-gm
+fluidsynth -ni /usr/share/sounds/sf2/FluidR3_GM.sf2 output.mid -F playback.wav
+ffmpeg -i playback.wav -c:a libmp3lame -q:a 2 playback.mp3
+```
 
 ## What is 王道進行?
 
-The **Royal Road progression** (王道進行, *ōdō shinkō*) is IV→V→iii→vi in Japanese pop music — the "royal road" because it's the most common chord progression in J-pop, anime, and game music. In C major: FΔ → G → E-7 → A-7, often extended to IV→V→iii→vi→ii→V→I.
+**Royal Road progression** (王道進行, *ōdō shinkō*): IV → V → iii → vi. The most common chord progression in J-pop, anime, and game music. In C major: F△ → G → Em7 → Am7.
 
-This video explores jazz variations on the progression: secondary dominants, tritone substitutions, passing diminished chords, and other reharmonizations.
-
-## Limitations
-
-- Detection accuracy depends on video quality and the distinctness of the key highlight color
-- Very fast repeated notes on the same key may merge if no frame captures the key in released state between presses
-- The keyboard region parameters (`--kb-top`, `--kb-bottom`) may need adjustment for different video layouts
-- Works best with videos that have clear, solid-color key highlights (not gradients or particle effects)
+The source video explores jazz reharmonizations: secondary dominants, tritone substitutions, passing diminished chords.

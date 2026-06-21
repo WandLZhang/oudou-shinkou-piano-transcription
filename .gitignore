@@ -1,12 +1,11 @@
 .venv/
-venv/
 __pycache__/
 *.pyc
 *.mp4
 *.webm
 *.wav
-frames/
-output.mid
-output.json
+*.json
+*.ly
+*.png
 *.egg-info/
 .env
