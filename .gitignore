@@ -9,3 +9,4 @@ __pycache__/
 *.png
 *.egg-info/
 .env
+gui-local/video2midi/
